@@ -10,6 +10,7 @@ intended for authorized network administration and assessment only.
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -80,6 +81,40 @@ def require_nmcli() -> None:
         sys.exit(2)
 
 
+def is_elevated() -> bool:
+    if hasattr(os, "geteuid"):
+        return os.geteuid() == 0
+    return True
+
+
+def ensure_elevated(auto_elevate: bool) -> None:
+    if is_elevated():
+        return
+
+    if not auto_elevate:
+        raise PermissionError(
+            "Elevated privileges are required to manage NetworkManager WiFi profiles."
+        )
+
+    sudo_path = shutil.which("sudo")
+    if not sudo_path:
+        raise PermissionError(
+            "Elevated privileges are required, but sudo was not found. "
+            "Run as root or install sudo."
+        )
+
+    console.print(
+        "[yellow]Elevated privileges are required to manage NetworkManager WiFi profiles.[/yellow]"
+    )
+    console.print("[dim]Re-running through sudo; enter your password if prompted.[/dim]")
+
+    command = [sudo_path, sys.executable, *sys.argv]
+    try:
+        os.execvp(sudo_path, command)
+    except OSError as exc:
+        raise PermissionError(f"Failed to re-run with sudo: {exc}") from exc
+
+
 def detect_wifi_interface(provided: str | None) -> str:
     if provided:
         return provided
@@ -118,8 +153,8 @@ def parse_credential_file(path: Path) -> list[Credential]:
     return credentials
 
 
-def parse_credentials(username_or_file: str, password: str | None) -> list[Credential]:
-    credential_path = Path(username_or_file)
+def parse_credentials(username: str, password: str | None) -> list[Credential]:
+    credential_path = Path(username)
 
     if credential_path.is_file():
         if password:
@@ -133,7 +168,7 @@ def parse_credentials(username_or_file: str, password: str | None) -> list[Crede
             "Provide a password, or provide a credential file with username@domain:password lines."
         )
 
-    return [Credential(username=username_or_file, password=password)]
+    return [Credential(username=username, password=password)]
 
 
 def username_variants(username: str) -> list[str]:
@@ -304,7 +339,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("network_name", help="Wireless network SSID to test.")
     parser.add_argument(
-        "username_or_file",
+        "username",
         help="username@domain, or a file containing username@domain:password lines.",
     )
     parser.add_argument(
@@ -323,6 +358,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=35,
         help="Seconds to wait for each activation attempt. Default: 35.",
+    )
+    parser.add_argument(
+        "--no-elevate",
+        action="store_true",
+        help="Do not automatically re-run through sudo when elevated privileges are needed.",
     )
     return parser
 
@@ -357,7 +397,8 @@ def main() -> int:
 
     try:
         require_nmcli()
-        credentials = parse_credentials(args.username_or_file, args.password)
+        credentials = parse_credentials(args.username, args.password)
+        ensure_elevated(auto_elevate=not args.no_elevate)
         interface_name = detect_wifi_interface(args.interface)
     except Exception as exc:
         console.print(f"[bold red]Error:[/bold red] {exc}")
