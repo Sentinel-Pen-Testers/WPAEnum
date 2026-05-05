@@ -29,6 +29,7 @@ from rich.table import Table
 
 console = Console()
 version = "1.0.0"
+HEADER_PRINTED_ENV = "WPAENUM_HEADER_PRINTED"
 
 
 @dataclass(frozen=True)
@@ -108,7 +109,7 @@ def ensure_elevated(auto_elevate: bool) -> None:
     )
     console.print("[dim]Re-running through sudo; enter your password if prompted.[/dim]")
 
-    command = [sudo_path, sys.executable, *sys.argv]
+    command = [sudo_path, f"{HEADER_PRINTED_ENV}=1", sys.executable, *sys.argv]
     try:
         os.execvp(sudo_path, command)
     except OSError as exc:
@@ -393,7 +394,8 @@ def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
 
-    print_beginning(args)
+    if os.environ.get(HEADER_PRINTED_ENV) != "1":
+        print_beginning(args)
 
     try:
         require_nmcli()
@@ -409,18 +411,19 @@ def main() -> int:
 
     results: list[AttemptResult] = []
     for identity, password, method in iter_attempts(credentials):
-        console.print(
+        status_message = (
             f"Attempting [cyan]{method.label}[/cyan] "
             f"identity=[bold]{identity}[/bold]"
         )
-        result = test_login(
-            args.network_name,
-            interface_name,
-            identity,
-            password,
-            method,
-            args.timeout,
-        )
+        with console.status(status_message, spinner="dots"):
+            result = test_login(
+                args.network_name,
+                interface_name,
+                identity,
+                password,
+                method,
+                args.timeout,
+            )
         results.append(result)
         print_attempt_result(result)
 
