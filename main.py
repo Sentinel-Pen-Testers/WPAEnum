@@ -370,7 +370,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def print_beginning(args):
     body = Text()
-    body.append("PassInspector\n", style="bold cyan")
+    body.append("WPAEnum\n", style="bold cyan")
     body.append("Dustin Smith ", style="white")
     body.append("• ", style="dim")
     body.append("Sentinel Technologies\n", style="dim")
