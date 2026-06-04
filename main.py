@@ -172,12 +172,20 @@ def parse_credentials(username: str, password: str | None) -> list[Credential]:
     return [Credential(username=username, password=password)]
 
 
-def username_variants(username: str) -> list[str]:
-    local, separator, domain = username.partition("@")
+def username_variants(username: str, auth_domain: str | None = None) -> list[str]:
+    local, separator, email_domain = username.partition("@")
     variants = [username]
 
-    if separator and local and domain:
-        variants = [local, username, f"{local}\\{domain}"]
+    if separator and local and email_domain:
+        variants = [local, username]
+
+        domain = auth_domain or email_domain
+        variants.append(f"{domain}\\{local}")
+        if auth_domain:
+            variants.append(f"{local}@{auth_domain}")
+    elif auth_domain:
+        variants.append(f"{auth_domain}\\{username}")
+        variants.append(f"{username}@{auth_domain}")
 
     deduped: list[str] = []
     for variant in variants:
@@ -298,9 +306,12 @@ def test_login(
         time.sleep(1)
 
 
-def iter_attempts(credentials: Iterable[Credential]) -> Iterable[tuple[str, str, EnterpriseMethod]]:
+def iter_attempts(
+    credentials: Iterable[Credential],
+    auth_domain: str | None = None,
+) -> Iterable[tuple[str, str, EnterpriseMethod]]:
     for credential in credentials:
-        for identity in username_variants(credential.username):
+        for identity in username_variants(credential.username, auth_domain):
             for method in METHODS:
                 yield identity, credential.password, method
 
@@ -347,6 +358,14 @@ def build_parser() -> argparse.ArgumentParser:
         "password",
         nargs="?",
         help="Password for a single username. Omit this when using a credential file.",
+    )
+    parser.add_argument(
+        "--auth-domain",
+        help=(
+            "Internal authentication domain to use for domain-qualified identities, "
+            "for example city.brentwood-tn.org. Defaults to the email domain when "
+            "the username is username@domain."
+        ),
     )
     parser.add_argument(
         "-i",
@@ -410,7 +429,7 @@ def main() -> int:
     console.print()
 
     results: list[AttemptResult] = []
-    for identity, password, method in iter_attempts(credentials):
+    for identity, password, method in iter_attempts(credentials, args.auth_domain):
         status_message = (
             f"Attempting [cyan]{method.label}[/cyan] "
             f"identity=[bold]{identity}[/bold]"
