@@ -278,6 +278,8 @@ def test_login(
                 "connection",
                 "up",
                 connection_name,
+                "ifname",
+                interface_name,
                 "passwd-file",
                 str(secret_file),
             ],
